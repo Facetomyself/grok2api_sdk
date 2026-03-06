@@ -11,3 +11,4 @@ examples/tmp_test.png
 outputs/
 *.egg-info/
 demo.py
+uv.lock
