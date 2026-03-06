@@ -18,6 +18,8 @@ def main() -> None:
             response_format="url",
         )
         print(result)
+        saved = client.images.download_all(result, Path("outputs") / "images")
+        print("saved:", [str(p) for p in saved])
 
 
 if __name__ == "__main__":

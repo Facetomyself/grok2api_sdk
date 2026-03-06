@@ -13,6 +13,8 @@
 - 视频接口完整适配：按 `grok2api` 源码约定，走 `POST /v1/chat/completions` + `model=grok-imagine-1.0-video` + `video_config`。
 - 同步/异步双栈都支持图片和视频。
 - `multipart` 请求同样走重试策略和请求 hook，不是“只给 JSON 开绿灯”。
+- 支持本地图片上传编辑（`images=[Path(...)]` / `bytes`）。
+- 支持将图片和视频一键下载到本地目录（`images.download_all`、`videos.download_assets`）。
 
 ## 目录结构
 
@@ -96,6 +98,8 @@ with GrokSDKClient() as client:
         response_format="url",
     )
     print(result)
+    saved_files = client.images.download_all(result, "outputs/images")
+    print(saved_files)
 ```
 
 ## 图片编辑（multipart/form-data）
@@ -108,11 +112,13 @@ with GrokSDKClient() as client:
     result = client.images.edit(
         model="grok-imagine-1.0-edit",
         prompt="Make this image watercolor style",
-        images=[Path("examples/tmp_test.png")],
+        images=[Path("examples/local_input.png")],  # 本地文件直接上传
         n=1,
         response_format="url",
     )
     print(result)
+    saved_files = client.images.download_all(result, "outputs/edited_images")
+    print(saved_files)
 ```
 
 说明：`/v1/images/edits` 依赖上游账号能力与上传校验，若账号或资源不满足条件，可能返回上游错误。
@@ -140,6 +146,8 @@ with GrokSDKClient() as client:
     )
     print(result)
     print(client.videos.extract_assets(result))
+    saved = client.videos.download_assets(result, "outputs/videos")
+    print(saved)
 ```
 
 `extract_assets` 会从响应里解析出：
@@ -148,6 +156,54 @@ with GrokSDKClient() as client:
 - `posters`: 预览图链接
 
 说明：视频生成耗时通常高于文本接口，建议把 `request_timeout` 设为 `120` 秒以上。
+
+## 本地下载辅助方法
+
+- `client.images.extract_urls(response)`：提取图片 URL 列表
+- `client.images.download(url, destination, skip_if_exists=False, resume=False)`：下载单张图片
+- `client.images.download_all(response, output_dir, skip_if_exists=False, resume=False)`：批量下载图片结果
+- `client.videos.extract_assets(response)`：提取视频和海报 URL
+- `client.videos.download(url, destination, skip_if_exists=False, resume=False)`：下载单个媒体文件
+- `client.videos.download_assets(response, output_dir, skip_if_exists=False, resume=False)`：批量下载视频与海报
+
+参数说明：
+
+- `skip_if_exists=True`：目标文件已存在时直接跳过下载
+- `resume=True`：尝试断点续传（服务端不支持 Range 时会自动回退为完整下载）
+
+示例（断点续传 + 已存在跳过）：
+
+```python
+from pathlib import Path
+from grok_sdk import GrokSDKClient
+
+with GrokSDKClient() as client:
+    result = client.images.generate(
+        model="grok-imagine-1.0",
+        prompt="A clean product photo",
+        n=1,
+        response_format="url",
+    )
+
+    # 第一次下载
+    saved = client.images.download_all(result, Path("outputs") / "images")
+
+    # 重复执行任务时：已有文件直接跳过；如果文件不完整则尝试续传
+    saved_again = client.images.download_all(
+        result,
+        Path("outputs") / "images",
+        skip_if_exists=True,
+        resume=True,
+    )
+    print(saved, saved_again)
+```
+
+异步客户端提供同名能力：
+
+- `await client.images.download(...)`
+- `await client.images.download_all(...)`
+- `await client.videos.download(...)`
+- `await client.videos.download_assets(...)`
 
 ## 异步调用（Async）
 

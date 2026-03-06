@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional, Union
 
 from ..transport import AsyncHTTPTransport
-from .media_utils import build_video_messages, extract_video_assets
+from .media_utils import (
+    build_video_messages,
+    extract_video_assets,
+    guess_filename_from_url,
+    normalize_payload_urls,
+)
 
 
 class AsyncVideosAPI:
@@ -40,17 +46,20 @@ class AsyncVideosAPI:
             extra=extra,
         )
         if stream:
-            return self._transport.stream(
-                "/chat/completions",
-                json_body=payload,
-                timeout=request_timeout,
+            return self._normalize_stream(
+                self._transport.stream(
+                    "/chat/completions",
+                    json_body=payload,
+                    timeout=request_timeout,
+                )
             )
-        return await self._transport.request(
+        result = await self._transport.request(
             "POST",
             "/chat/completions",
             json_body=payload,
             timeout=request_timeout,
         )
+        return self._normalize_urls(result)
 
     def stream(
         self,
@@ -80,15 +89,102 @@ class AsyncVideosAPI:
             thinking=thinking,
             extra=extra,
         )
-        return self._transport.stream(
-            "/chat/completions",
-            json_body=payload,
-            timeout=request_timeout,
+        return self._normalize_stream(
+            self._transport.stream(
+                "/chat/completions",
+                json_body=payload,
+                timeout=request_timeout,
+            )
         )
 
-    @staticmethod
-    def extract_assets(response: Any) -> Dict[str, List[str]]:
-        return extract_video_assets(response)
+    def extract_assets(self, response: Any) -> Dict[str, List[str]]:
+        return extract_video_assets(
+            response,
+            public_base_url=self._transport.config.base_url,
+        )
+
+    async def download(
+        self,
+        url: str,
+        destination: Union[str, Path],
+        *,
+        overwrite: bool = True,
+        skip_if_exists: bool = False,
+        resume: bool = False,
+    ) -> Path:
+        normalized = self._normalize_urls(url)
+        normalized_url = normalized if isinstance(normalized, str) else url
+        return await self._transport.download(
+            normalized_url,
+            destination,
+            overwrite=overwrite,
+            skip_if_exists=skip_if_exists,
+            resume=resume,
+        )
+
+    async def download_assets(
+        self,
+        response: Any,
+        output_dir: Union[str, Path],
+        *,
+        download_videos: bool = True,
+        download_posters: bool = True,
+        overwrite: bool = True,
+        skip_if_exists: bool = False,
+        resume: bool = False,
+    ) -> Dict[str, List[Path]]:
+        assets = self.extract_assets(response)
+        directory = Path(output_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        saved: Dict[str, List[Path]] = {"videos": [], "posters": []}
+
+        if download_videos:
+            for index, url in enumerate(assets.get("videos", []), start=1):
+                filename = guess_filename_from_url(
+                    url=url,
+                    prefix="video",
+                    index=index,
+                    default_ext=".mp4",
+                )
+                saved["videos"].append(
+                    await self.download(
+                        url,
+                        directory / filename,
+                        overwrite=overwrite,
+                        skip_if_exists=skip_if_exists,
+                        resume=resume,
+                    )
+                )
+
+        if download_posters:
+            for index, url in enumerate(assets.get("posters", []), start=1):
+                filename = guess_filename_from_url(
+                    url=url,
+                    prefix="poster",
+                    index=index,
+                    default_ext=".jpg",
+                )
+                saved["posters"].append(
+                    await self.download(
+                        url,
+                        directory / filename,
+                        overwrite=overwrite,
+                        skip_if_exists=skip_if_exists,
+                        resume=resume,
+                    )
+                )
+
+        return saved
+
+    def _normalize_urls(self, payload: Any) -> Any:
+        return normalize_payload_urls(payload, self._transport.config.base_url)
+
+    async def _normalize_stream(
+        self, source: AsyncGenerator[Dict[str, Any], None]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        async for chunk in source:
+            normalized = self._normalize_urls(chunk)
+            yield normalized if isinstance(normalized, dict) else chunk
 
     @staticmethod
     def _build_payload(

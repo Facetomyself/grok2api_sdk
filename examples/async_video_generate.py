@@ -22,6 +22,14 @@ async def main() -> None:
         )
         print(result)
         print("assets:", client.videos.extract_assets(result))
+        saved = await client.videos.download_assets(result, Path("outputs") / "videos_async")
+        print(
+            "saved:",
+            {
+                "videos": [str(p) for p in saved["videos"]],
+                "posters": [str(p) for p in saved["posters"]],
+            },
+        )
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ def main() -> None:
                 response_format="url",
             )
             print(result)
+            saved = client.images.download_all(result, Path("outputs") / "edited_images")
+            print("saved:", [str(p) for p in saved])
         except APIError as exc:
             print("image edit failed:", exc)
 

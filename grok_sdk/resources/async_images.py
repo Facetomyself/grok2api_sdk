@@ -5,7 +5,13 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional, Tuple, Union
 
 from ..transport import AsyncHTTPTransport, MultipartFile
-from .media_utils import ensure_bytes, normalize_form_bool
+from .media_utils import (
+    collect_image_urls,
+    ensure_bytes,
+    guess_filename_from_url,
+    normalize_form_bool,
+    normalize_payload_urls,
+)
 
 ImageInput = Union[str, Path, bytes, bytearray, Tuple[str, bytes], Tuple[str, bytes, str]]
 
@@ -15,7 +21,8 @@ class AsyncImagesAPI:
         self._transport = transport
 
     async def method(self) -> Any:
-        return await self._transport.request("GET", "/images/method")
+        result = await self._transport.request("GET", "/images/method")
+        return self._normalize_urls(result)
 
     async def generate(
         self,
@@ -44,8 +51,11 @@ class AsyncImagesAPI:
         payload.update(extra)
 
         if stream:
-            return self._transport.stream("/images/generations", json_body=payload)
-        return await self._transport.request("POST", "/images/generations", json_body=payload)
+            return self._normalize_stream(
+                self._transport.stream("/images/generations", json_body=payload)
+            )
+        result = await self._transport.request("POST", "/images/generations", json_body=payload)
+        return self._normalize_urls(result)
 
     def stream_generate(
         self,
@@ -71,7 +81,9 @@ class AsyncImagesAPI:
         if response_format is not None:
             payload["response_format"] = response_format
         payload.update(extra)
-        return self._transport.stream("/images/generations", json_body=payload)
+        return self._normalize_stream(
+            self._transport.stream("/images/generations", json_body=payload)
+        )
 
     async def edit(
         self,
@@ -101,17 +113,20 @@ class AsyncImagesAPI:
         files = self._prepare_image_files(images)
 
         if stream:
-            return self._transport.stream_form(
-                "/images/edits",
-                data=data,
-                files=files,
+            return self._normalize_stream(
+                self._transport.stream_form(
+                    "/images/edits",
+                    data=data,
+                    files=files,
+                )
             )
-        return await self._transport.request_form(
+        result = await self._transport.request_form(
             "POST",
             "/images/edits",
             data=data,
             files=files,
         )
+        return self._normalize_urls(result)
 
     def stream_edit(
         self,
@@ -138,11 +153,82 @@ class AsyncImagesAPI:
             extra=extra,
         )
         files = self._prepare_image_files(images)
-        return self._transport.stream_form(
-            "/images/edits",
-            data=data,
-            files=files,
+        return self._normalize_stream(
+            self._transport.stream_form(
+                "/images/edits",
+                data=data,
+                files=files,
+            )
         )
+
+    def extract_urls(self, response: Any) -> List[str]:
+        normalized = self._normalize_urls(response)
+        return collect_image_urls(normalized)
+
+    async def download(
+        self,
+        url: str,
+        destination: Union[str, Path],
+        *,
+        overwrite: bool = True,
+        skip_if_exists: bool = False,
+        resume: bool = False,
+    ) -> Path:
+        normalized = self._normalize_urls(url)
+        normalized_url = normalized if isinstance(normalized, str) else url
+        return await self._transport.download(
+            normalized_url,
+            destination,
+            overwrite=overwrite,
+            skip_if_exists=skip_if_exists,
+            resume=resume,
+        )
+
+    async def download_all(
+        self,
+        response: Any,
+        output_dir: Union[str, Path],
+        *,
+        prefix: str = "image",
+        overwrite: bool = True,
+        skip_if_exists: bool = False,
+        resume: bool = False,
+    ) -> List[Path]:
+        urls = self.extract_urls(response)
+        directory = Path(output_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        saved: List[Path] = []
+        used_names: set[str] = set()
+        for index, url in enumerate(urls, start=1):
+            filename = guess_filename_from_url(
+                url=url,
+                prefix=prefix,
+                index=index,
+                default_ext=".jpg",
+            )
+            if filename in used_names:
+                filename = f"{prefix}_{index}{Path(filename).suffix or '.jpg'}"
+            used_names.add(filename)
+            saved_path = await self.download(
+                url,
+                directory / filename,
+                overwrite=overwrite,
+                skip_if_exists=skip_if_exists,
+                resume=resume,
+            )
+            saved.append(saved_path)
+        return saved
+
+    def _normalize_urls(self, payload: Any) -> Any:
+        return normalize_payload_urls(payload, self._transport.config.base_url)
+
+    async def _normalize_stream(
+        self, source: AsyncGenerator[Dict[str, Any], None]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        async for chunk in source:
+            normalized = self._normalize_urls(chunk)
+            yield normalized if isinstance(normalized, dict) else chunk
 
     @staticmethod
     def _build_edit_form_data(

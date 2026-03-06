@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from pathlib import Path
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import time
-from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple, Union
+from urllib.parse import urlparse
 
 import requests
 from requests import Response, Session
@@ -27,6 +29,26 @@ from .exceptions import (
 from .hooks import AsyncRequestLogHook, RequestLogEvent, RequestLogHook
 
 MultipartFile = Tuple[str, Tuple[str, bytes, str]]
+
+
+def _same_origin(left_url: str, right_url: str) -> bool:
+    left = urlparse(left_url)
+    right = urlparse(right_url)
+    if not left.scheme or not right.scheme or not left.netloc or not right.netloc:
+        return False
+    return (
+        left.scheme.lower() == right.scheme.lower()
+        and (left.hostname or "").lower() == (right.hostname or "").lower()
+        and _effective_port(left) == _effective_port(right)
+    )
+
+
+def _effective_port(parsed: Any) -> int:
+    if parsed.port:
+        return int(parsed.port)
+    if parsed.scheme.lower() == "https":
+        return 443
+    return 80
 
 
 def _extract_error_message(payload: Any) -> str:
@@ -335,6 +357,174 @@ class HTTPTransport(_RetryMixin):
             return self._parse_response(response)
 
         raise APIError("Request failed after retries exhausted")
+
+    def download(
+        self,
+        url: str,
+        destination: Union[str, Path],
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        overwrite: bool = True,
+        skip_if_exists: bool = False,
+        resume: bool = False,
+        chunk_size: int = 1024 * 256,
+        use_auth: Optional[bool] = None,
+    ) -> Path:
+        max_attempts = self._max_attempts()
+        dest_path = Path(destination)
+        if dest_path.exists() and dest_path.is_dir():
+            raise IsADirectoryError(f"destination is a directory: {dest_path}")
+        if skip_if_exists and dest_path.exists():
+            return dest_path
+        if dest_path.exists() and not overwrite and not resume:
+            raise FileExistsError(f"destination exists: {dest_path}")
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = dest_path.with_suffix(dest_path.suffix + ".part")
+
+        attach_auth = (
+            _same_origin(url, self.config.base_url)
+            if use_auth is None
+            else bool(use_auth)
+        )
+        request_headers: Dict[str, str] = {}
+        if attach_auth and self.config.api_key:
+            request_headers["Authorization"] = f"Bearer {self.config.api_key}"
+        if headers:
+            request_headers.update(headers)
+
+        for attempt in range(1, max_attempts + 1):
+            start = time.monotonic()
+            current_size = (
+                dest_path.stat().st_size if (resume and dest_path.exists()) else 0
+            )
+            request_headers_attempt = dict(request_headers)
+            if resume and current_size > 0:
+                request_headers_attempt["Range"] = f"bytes={current_size}-"
+            try:
+                with self._session.get(
+                    url=url,
+                    headers=request_headers_attempt,
+                    timeout=timeout if timeout is not None else self.config.timeout,
+                    verify=self.config.verify_ssl,
+                    stream=True,
+                ) as response:
+                    duration_ms = (time.monotonic() - start) * 1000.0
+                    if response.status_code == 416 and resume and dest_path.exists():
+                        self._emit_log(
+                            phase="response",
+                            method="GET",
+                            path=url,
+                            url=url,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            status_code=response.status_code,
+                            duration_ms=duration_ms,
+                        )
+                        return dest_path
+
+                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                        delay = self._compute_retry_delay(
+                            attempt, response.headers.get("Retry-After")
+                        )
+                        self._emit_log(
+                            phase="retry",
+                            method="GET",
+                            path=url,
+                            url=url,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            status_code=response.status_code,
+                            duration_ms=duration_ms,
+                            retry_delay_s=delay,
+                        )
+                        time.sleep(delay)
+                        continue
+
+                    self._raise_for_status(response)
+                    use_append_mode = resume and current_size > 0 and response.status_code == 206
+                    if use_append_mode:
+                        target_path = dest_path
+                        write_mode = "ab"
+                    else:
+                        target_path = tmp_path
+                        write_mode = "wb"
+
+                    with target_path.open(write_mode) as file_obj:
+                        for chunk in response.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                file_obj.write(chunk)
+                    if target_path == tmp_path:
+                        tmp_path.replace(dest_path)
+                    self._emit_log(
+                        phase="response",
+                        method="GET",
+                        path=url,
+                        url=url,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        status_code=response.status_code,
+                        duration_ms=duration_ms,
+                    )
+                    return dest_path
+            except requests.Timeout as exc:
+                duration_ms = (time.monotonic() - start) * 1000.0
+                if attempt < max_attempts:
+                    delay = self._compute_retry_delay(attempt)
+                    self._emit_log(
+                        phase="retry",
+                        method="GET",
+                        path=url,
+                        url=url,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        duration_ms=duration_ms,
+                        retry_delay_s=delay,
+                        error=str(exc),
+                    )
+                    time.sleep(delay)
+                    continue
+                self._emit_log(
+                    phase="error",
+                    method="GET",
+                    path=url,
+                    url=url,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    duration_ms=duration_ms,
+                    error=str(exc),
+                )
+                raise TimeoutError(f"Download timeout: {url}") from exc
+            except requests.RequestException as exc:
+                duration_ms = (time.monotonic() - start) * 1000.0
+                if attempt < max_attempts:
+                    delay = self._compute_retry_delay(attempt)
+                    self._emit_log(
+                        phase="retry",
+                        method="GET",
+                        path=url,
+                        url=url,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        duration_ms=duration_ms,
+                        retry_delay_s=delay,
+                        error=str(exc),
+                    )
+                    time.sleep(delay)
+                    continue
+                self._emit_log(
+                    phase="error",
+                    method="GET",
+                    path=url,
+                    url=url,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    duration_ms=duration_ms,
+                    error=str(exc),
+                )
+                raise APIError(f"Download failed: {exc}") from exc
+
+        raise APIError("Download failed after retries exhausted")
 
     def stream(
         self,
@@ -906,6 +1096,151 @@ class AsyncHTTPTransport(_RetryMixin):
             return self._parse_response(response)
 
         raise APIError("Request failed after retries exhausted")
+
+    async def download(
+        self,
+        url: str,
+        destination: Union[str, Path],
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        overwrite: bool = True,
+        skip_if_exists: bool = False,
+        resume: bool = False,
+        chunk_size: int = 1024 * 256,
+        use_auth: Optional[bool] = None,
+    ) -> Path:
+        max_attempts = self._max_attempts()
+        dest_path = Path(destination)
+        if dest_path.exists() and dest_path.is_dir():
+            raise IsADirectoryError(f"destination is a directory: {dest_path}")
+        if skip_if_exists and dest_path.exists():
+            return dest_path
+        if dest_path.exists() and not overwrite and not resume:
+            raise FileExistsError(f"destination exists: {dest_path}")
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = dest_path.with_suffix(dest_path.suffix + ".part")
+
+        attach_auth = (
+            _same_origin(url, self.config.base_url)
+            if use_auth is None
+            else bool(use_auth)
+        )
+        request_headers: Dict[str, str] = {}
+        if attach_auth and self.config.api_key:
+            request_headers["Authorization"] = f"Bearer {self.config.api_key}"
+        if headers:
+            request_headers.update(headers)
+
+        for attempt in range(1, max_attempts + 1):
+            start = time.monotonic()
+            current_size = (
+                dest_path.stat().st_size if (resume and dest_path.exists()) else 0
+            )
+            request_headers_attempt = dict(request_headers)
+            if resume and current_size > 0:
+                request_headers_attempt["Range"] = f"bytes={current_size}-"
+            try:
+                async with self._client.stream(
+                    "GET",
+                    url,
+                    headers=request_headers_attempt,
+                    timeout=timeout if timeout is not None else self.config.timeout,
+                ) as response:
+                    duration_ms = (time.monotonic() - start) * 1000.0
+                    if response.status_code == 416 and resume and dest_path.exists():
+                        await self._emit_log(
+                            phase="response",
+                            method="GET",
+                            path=url,
+                            url=url,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            status_code=response.status_code,
+                            duration_ms=duration_ms,
+                        )
+                        return dest_path
+
+                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                        delay = self._compute_retry_delay(
+                            attempt, response.headers.get("Retry-After")
+                        )
+                        await self._emit_log(
+                            phase="retry",
+                            method="GET",
+                            path=url,
+                            url=url,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            status_code=response.status_code,
+                            duration_ms=duration_ms,
+                            retry_delay_s=delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
+                    self._raise_for_status(response)
+                    use_append_mode = resume and current_size > 0 and response.status_code == 206
+                    if use_append_mode:
+                        target_path = dest_path
+                        write_mode = "ab"
+                    else:
+                        target_path = tmp_path
+                        write_mode = "wb"
+
+                    with target_path.open(write_mode) as file_obj:
+                        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                            if chunk:
+                                file_obj.write(chunk)
+                    if target_path == tmp_path:
+                        tmp_path.replace(dest_path)
+                    await self._emit_log(
+                        phase="response",
+                        method="GET",
+                        path=url,
+                        url=url,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        status_code=response.status_code,
+                        duration_ms=duration_ms,
+                    )
+                    return dest_path
+            except Exception as exc:
+                duration_ms = (time.monotonic() - start) * 1000.0
+                timeout_exc = httpx is not None and isinstance(exc, httpx.TimeoutException)
+                request_exc = httpx is not None and isinstance(exc, httpx.RequestError)
+                if (timeout_exc or request_exc) and attempt < max_attempts:
+                    delay = self._compute_retry_delay(attempt)
+                    await self._emit_log(
+                        phase="retry",
+                        method="GET",
+                        path=url,
+                        url=url,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        duration_ms=duration_ms,
+                        retry_delay_s=delay,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                await self._emit_log(
+                    phase="error",
+                    method="GET",
+                    path=url,
+                    url=url,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    duration_ms=duration_ms,
+                    error=str(exc),
+                )
+                if timeout_exc:
+                    raise TimeoutError(f"Download timeout: {url}") from exc
+                if request_exc:
+                    raise APIError(f"Download failed: {exc}") from exc
+                raise
+
+        raise APIError("Download failed after retries exhausted")
 
     async def stream(
         self,
