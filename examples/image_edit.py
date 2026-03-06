@@ -1,0 +1,34 @@
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from grok_sdk import APIError, GrokSDKClient
+
+
+def main() -> None:
+    image_path = Path("examples") / "tmp_test.png"
+    if not image_path.exists():
+        raise FileNotFoundError(
+            "missing examples/tmp_test.png. "
+            "prepare an image file first, then rerun this example."
+        )
+
+    with GrokSDKClient() as client:
+        try:
+            result = client.images.edit(
+                model="grok-imagine-1.0-edit",
+                prompt="Make this image watercolor style",
+                images=[image_path],
+                n=1,
+                response_format="url",
+            )
+            print(result)
+        except APIError as exc:
+            print("image edit failed:", exc)
+
+
+if __name__ == "__main__":
+    main()
