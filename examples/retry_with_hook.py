@@ -1,14 +1,8 @@
-from pathlib import Path
 import sys
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from grok_sdk import GrokSDKClient, RequestLogEvent
+from pathlib import Path
 
 
-def log_hook(event: RequestLogEvent) -> None:
+def log_hook(event) -> None:
     print(
         f"[{event.transport}] {event.phase} "
         f"{event.method} {event.path} "
@@ -20,6 +14,13 @@ def log_hook(event: RequestLogEvent) -> None:
 
 
 def main() -> None:
+    # Allow running examples without installing the package.
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    from grok_sdk import GrokSDKClient
+
     with GrokSDKClient(
         max_retries=3,
         retry_backoff_base=0.5,

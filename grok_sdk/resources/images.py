@@ -13,7 +13,9 @@ from .media_utils import (
     normalize_payload_urls,
 )
 
-ImageInput = Union[str, Path, bytes, bytearray, Tuple[str, bytes], Tuple[str, bytes, str]]
+ImageInput = Union[
+    str, Path, bytes, bytearray, Tuple[str, bytes], Tuple[str, bytes, str]
+]
 
 
 class ImagesAPI:
@@ -54,7 +56,9 @@ class ImagesAPI:
             return self._normalize_stream(
                 self._transport.stream("/images/generations", json_body=payload)
             )
-        result = self._transport.request("POST", "/images/generations", json_body=payload)
+        result = self._transport.request(
+            "POST", "/images/generations", json_body=payload
+        )
         return self._normalize_urls(result)
 
     def stream_generate(

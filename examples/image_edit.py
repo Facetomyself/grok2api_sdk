@@ -1,14 +1,15 @@
-from pathlib import Path
 import sys
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from grok_sdk import APIError, GrokSDKClient
+from pathlib import Path
 
 
 def main() -> None:
+    # Allow running examples without installing the package.
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    from grok_sdk import APIError, GrokSDKClient
+
     image_path = Path("examples") / "tmp_test.png"
     if not image_path.exists():
         raise FileNotFoundError(
@@ -26,7 +27,9 @@ def main() -> None:
                 response_format="url",
             )
             print(result)
-            saved = client.images.download_all(result, Path("outputs") / "edited_images")
+            saved = client.images.download_all(
+                result, Path("outputs") / "edited_images"
+            )
             print("saved:", [str(p) for p in saved])
         except APIError as exc:
             print("image edit failed:", exc)

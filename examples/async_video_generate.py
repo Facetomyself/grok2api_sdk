@@ -1,15 +1,16 @@
-from pathlib import Path
-import sys
 import asyncio
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from grok_sdk import AsyncGrokSDKClient
+import sys
+from pathlib import Path
 
 
 async def main() -> None:
+    # Allow running examples without installing the package.
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    from grok_sdk import AsyncGrokSDKClient
+
     async with AsyncGrokSDKClient() as client:
         result = await client.videos.generate(
             model="grok-imagine-1.0-video",
@@ -22,7 +23,9 @@ async def main() -> None:
         )
         print(result)
         print("assets:", client.videos.extract_assets(result))
-        saved = await client.videos.download_assets(result, Path("outputs") / "videos_async")
+        saved = await client.videos.download_assets(
+            result, Path("outputs") / "videos_async"
+        )
         print(
             "saved:",
             {

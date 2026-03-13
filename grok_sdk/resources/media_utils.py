@@ -65,8 +65,12 @@ def extract_video_assets(
     deduped_posters = _dedupe(posters)
 
     if public_base_url:
-        deduped_videos = [normalize_url(item, public_base_url) for item in deduped_videos]
-        deduped_posters = [normalize_url(item, public_base_url) for item in deduped_posters]
+        deduped_videos = [
+            normalize_url(item, public_base_url) for item in deduped_videos
+        ]
+        deduped_posters = [
+            normalize_url(item, public_base_url) for item in deduped_posters
+        ]
 
     return {
         "videos": deduped_videos,
