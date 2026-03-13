@@ -74,6 +74,20 @@ GROK_RETRY_BACKOFF_MAX=8
 
 ## 快速开始（文本）
 
+## OpenAI Responses API 兼容接口（grok2api /v1/responses）
+
+```python
+from grok_sdk import GrokSDKClient
+
+with GrokSDKClient() as client:
+    resp = client.responses.create(
+        model="grok-4",
+        input="解释一下量子隧穿",
+        stream=False,
+    )
+    print(resp)
+```
+
 ```python
 from grok_sdk import GrokSDKClient
 
@@ -126,7 +140,25 @@ with GrokSDKClient() as client:
 
 ## 视频生成（重点）
 
-`grok2api` 的视频不是 `/v1/videos/*`，而是：
+### OpenAI videos.create 兼容接口（grok2api /v1/videos）
+
+```python
+from grok_sdk import GrokSDKClient
+
+with GrokSDKClient() as client:
+    resp = client.openai_videos.create(
+        model="grok-imagine-1.0-video",
+        prompt="霓虹雨夜街头，慢镜头追拍",
+        size="1792x1024",
+        seconds=18,
+        quality="standard",
+    )
+    print(resp)
+```
+
+---
+
+`grok2api` 也支持通过 `/v1/chat/completions` + `video_config` 调用视频能力：
 
 - 路径：`POST /v1/chat/completions`
 - 模型：`grok-imagine-1.0-video`

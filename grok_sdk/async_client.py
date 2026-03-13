@@ -4,7 +4,14 @@ from typing import Optional
 
 from .config import SDKConfig
 from .hooks import AsyncRequestLogHook
-from .resources import AsyncChatAPI, AsyncImagesAPI, AsyncModelsAPI, AsyncVideosAPI
+from .resources import (
+    AsyncChatAPI,
+    AsyncImagesAPI,
+    AsyncModelsAPI,
+    AsyncOpenAIVideosAPI,
+    AsyncResponsesAPI,
+    AsyncVideosAPI,
+)
 from .transport import AsyncHTTPTransport
 
 
@@ -54,9 +61,11 @@ class AsyncGrokSDKClient:
             request_log_hook=request_log_hook,
         )
         self.chat = AsyncChatAPI(self._transport)
+        self.responses = AsyncResponsesAPI(self._transport)
         self.images = AsyncImagesAPI(self._transport)
         self.models = AsyncModelsAPI(self._transport)
         self.videos = AsyncVideosAPI(self._transport)
+        self.openai_videos = AsyncOpenAIVideosAPI(self._transport)
 
     async def close(self) -> None:
         await self._transport.close()
