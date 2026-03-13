@@ -4,7 +4,14 @@ from typing import Optional
 
 from .config import SDKConfig
 from .hooks import RequestLogHook
-from .resources import ChatAPI, ImagesAPI, ModelsAPI, VideosAPI
+from .resources import (
+    ChatAPI,
+    ImagesAPI,
+    ModelsAPI,
+    OpenAIVideosAPI,
+    ResponsesAPI,
+    VideosAPI,
+)
 from .transport import HTTPTransport
 
 
@@ -54,9 +61,11 @@ class GrokSDKClient:
             request_log_hook=request_log_hook,
         )
         self.chat = ChatAPI(self._transport)
+        self.responses = ResponsesAPI(self._transport)
         self.images = ImagesAPI(self._transport)
         self.models = ModelsAPI(self._transport)
         self.videos = VideosAPI(self._transport)
+        self.openai_videos = OpenAIVideosAPI(self._transport)
 
     def close(self) -> None:
         self._transport.close()

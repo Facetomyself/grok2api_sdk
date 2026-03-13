@@ -41,7 +41,6 @@ def parse_sse_lines(lines: Iterable[str]) -> Generator[SSEEvent, None, None]:
         return out
 
     for raw in lines:
-        # strip CRLF
         line = raw.rstrip("\r\n")
         if line == "":
             maybe = emit()
@@ -49,12 +48,10 @@ def parse_sse_lines(lines: Iterable[str]) -> Generator[SSEEvent, None, None]:
                 yield maybe
             continue
         if line.startswith(":"):
-            # comment line
             continue
 
         field, sep, value = line.partition(":")
         if sep == "":
-            # malformed line, ignore
             continue
         if value.startswith(" "):
             value = value[1:]
