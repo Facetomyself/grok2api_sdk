@@ -204,7 +204,10 @@ class HTTPTransport(_RetryMixin):
                 raise APIError(f"Request failed: {exc}") from exc
 
             duration_ms = (time.monotonic() - start) * 1000.0
-            if self._should_retry_status(response.status_code) and attempt < max_attempts:
+            if (
+                self._should_retry_status(response.status_code)
+                and attempt < max_attempts
+            ):
                 delay = self._compute_retry_delay(
                     attempt, response.headers.get("Retry-After")
                 )
@@ -325,7 +328,10 @@ class HTTPTransport(_RetryMixin):
                 raise APIError(f"Request failed: {exc}") from exc
 
             duration_ms = (time.monotonic() - start) * 1000.0
-            if self._should_retry_status(response.status_code) and attempt < max_attempts:
+            if (
+                self._should_retry_status(response.status_code)
+                and attempt < max_attempts
+            ):
                 delay = self._compute_retry_delay(
                     attempt, response.headers.get("Retry-After")
                 )
@@ -423,7 +429,10 @@ class HTTPTransport(_RetryMixin):
                         )
                         return dest_path
 
-                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                    if (
+                        self._should_retry_status(response.status_code)
+                        and attempt < max_attempts
+                    ):
                         delay = self._compute_retry_delay(
                             attempt, response.headers.get("Retry-After")
                         )
@@ -442,7 +451,9 @@ class HTTPTransport(_RetryMixin):
                         continue
 
                     self._raise_for_status(response)
-                    use_append_mode = resume and current_size > 0 and response.status_code == 206
+                    use_append_mode = (
+                        resume and current_size > 0 and response.status_code == 206
+                    )
                     if use_append_mode:
                         target_path = dest_path
                         write_mode = "ab"
@@ -553,7 +564,10 @@ class HTTPTransport(_RetryMixin):
                     stream=True,
                 ) as response:
                     duration_ms = (time.monotonic() - start) * 1000.0
-                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                    if (
+                        self._should_retry_status(response.status_code)
+                        and attempt < max_attempts
+                    ):
                         delay = self._compute_retry_delay(
                             attempt, response.headers.get("Retry-After")
                         )
@@ -695,7 +709,10 @@ class HTTPTransport(_RetryMixin):
                     stream=True,
                 ) as response:
                     duration_ms = (time.monotonic() - start) * 1000.0
-                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                    if (
+                        self._should_retry_status(response.status_code)
+                        and attempt < max_attempts
+                    ):
                         delay = self._compute_retry_delay(
                             attempt, response.headers.get("Retry-After")
                         )
@@ -811,9 +828,9 @@ class HTTPTransport(_RetryMixin):
         *,
         include_json_content_type: bool = True,
     ) -> Dict[str, str]:
-        headers: Dict[str, str] = {
-            "Authorization": f"Bearer {self.config.api_key}",
-        }
+        headers: Dict[str, str] = {}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
         if include_json_content_type:
             headers["Content-Type"] = "application/json"
         if extra_headers:
@@ -934,7 +951,9 @@ class AsyncHTTPTransport(_RetryMixin):
                 )
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000.0
-                timeout_exc = httpx is not None and isinstance(exc, httpx.TimeoutException)
+                timeout_exc = httpx is not None and isinstance(
+                    exc, httpx.TimeoutException
+                )
                 request_exc = httpx is not None and isinstance(exc, httpx.RequestError)
                 if (timeout_exc or request_exc) and attempt < max_attempts:
                     delay = self._compute_retry_delay(attempt)
@@ -968,7 +987,10 @@ class AsyncHTTPTransport(_RetryMixin):
                 raise
 
             duration_ms = (time.monotonic() - start) * 1000.0
-            if self._should_retry_status(response.status_code) and attempt < max_attempts:
+            if (
+                self._should_retry_status(response.status_code)
+                and attempt < max_attempts
+            ):
                 delay = self._compute_retry_delay(
                     attempt, response.headers.get("Retry-After")
                 )
@@ -1031,7 +1053,9 @@ class AsyncHTTPTransport(_RetryMixin):
                 )
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000.0
-                timeout_exc = httpx is not None and isinstance(exc, httpx.TimeoutException)
+                timeout_exc = httpx is not None and isinstance(
+                    exc, httpx.TimeoutException
+                )
                 request_exc = httpx is not None and isinstance(exc, httpx.RequestError)
                 if (timeout_exc or request_exc) and attempt < max_attempts:
                     delay = self._compute_retry_delay(attempt)
@@ -1065,7 +1089,10 @@ class AsyncHTTPTransport(_RetryMixin):
                 raise
 
             duration_ms = (time.monotonic() - start) * 1000.0
-            if self._should_retry_status(response.status_code) and attempt < max_attempts:
+            if (
+                self._should_retry_status(response.status_code)
+                and attempt < max_attempts
+            ):
                 delay = self._compute_retry_delay(
                     attempt, response.headers.get("Retry-After")
                 )
@@ -1161,7 +1188,10 @@ class AsyncHTTPTransport(_RetryMixin):
                         )
                         return dest_path
 
-                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                    if (
+                        self._should_retry_status(response.status_code)
+                        and attempt < max_attempts
+                    ):
                         delay = self._compute_retry_delay(
                             attempt, response.headers.get("Retry-After")
                         )
@@ -1180,7 +1210,9 @@ class AsyncHTTPTransport(_RetryMixin):
                         continue
 
                     self._raise_for_status(response)
-                    use_append_mode = resume and current_size > 0 and response.status_code == 206
+                    use_append_mode = (
+                        resume and current_size > 0 and response.status_code == 206
+                    )
                     if use_append_mode:
                         target_path = dest_path
                         write_mode = "ab"
@@ -1207,7 +1239,9 @@ class AsyncHTTPTransport(_RetryMixin):
                     return dest_path
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000.0
-                timeout_exc = httpx is not None and isinstance(exc, httpx.TimeoutException)
+                timeout_exc = httpx is not None and isinstance(
+                    exc, httpx.TimeoutException
+                )
                 request_exc = httpx is not None and isinstance(exc, httpx.RequestError)
                 if (timeout_exc or request_exc) and attempt < max_attempts:
                     delay = self._compute_retry_delay(attempt)
@@ -1268,7 +1302,10 @@ class AsyncHTTPTransport(_RetryMixin):
                     timeout=timeout if timeout is not None else self.config.timeout,
                 ) as response:
                     duration_ms = (time.monotonic() - start) * 1000.0
-                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                    if (
+                        self._should_retry_status(response.status_code)
+                        and attempt < max_attempts
+                    ):
                         delay = self._compute_retry_delay(
                             attempt, response.headers.get("Retry-After")
                         )
@@ -1317,9 +1354,15 @@ class AsyncHTTPTransport(_RetryMixin):
                     return
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000.0
-                timeout_exc = httpx is not None and isinstance(exc, httpx.TimeoutException)
+                timeout_exc = httpx is not None and isinstance(
+                    exc, httpx.TimeoutException
+                )
                 request_exc = httpx is not None and isinstance(exc, httpx.RequestError)
-                if (timeout_exc or request_exc) and attempt < max_attempts and not stream_started:
+                if (
+                    (timeout_exc or request_exc)
+                    and attempt < max_attempts
+                    and not stream_started
+                ):
                     delay = self._compute_retry_delay(attempt)
                     await self._emit_log(
                         phase="retry",
@@ -1385,7 +1428,10 @@ class AsyncHTTPTransport(_RetryMixin):
                     timeout=timeout if timeout is not None else self.config.timeout,
                 ) as response:
                     duration_ms = (time.monotonic() - start) * 1000.0
-                    if self._should_retry_status(response.status_code) and attempt < max_attempts:
+                    if (
+                        self._should_retry_status(response.status_code)
+                        and attempt < max_attempts
+                    ):
                         delay = self._compute_retry_delay(
                             attempt, response.headers.get("Retry-After")
                         )
@@ -1434,9 +1480,15 @@ class AsyncHTTPTransport(_RetryMixin):
                     return
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000.0
-                timeout_exc = httpx is not None and isinstance(exc, httpx.TimeoutException)
+                timeout_exc = httpx is not None and isinstance(
+                    exc, httpx.TimeoutException
+                )
                 request_exc = httpx is not None and isinstance(exc, httpx.RequestError)
-                if (timeout_exc or request_exc) and attempt < max_attempts and not stream_started:
+                if (
+                    (timeout_exc or request_exc)
+                    and attempt < max_attempts
+                    and not stream_started
+                ):
                     delay = self._compute_retry_delay(attempt)
                     await self._emit_log(
                         phase="retry",
@@ -1477,9 +1529,9 @@ class AsyncHTTPTransport(_RetryMixin):
         *,
         include_json_content_type: bool = True,
     ) -> Dict[str, str]:
-        headers: Dict[str, str] = {
-            "Authorization": f"Bearer {self.config.api_key}",
-        }
+        headers: Dict[str, str] = {}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
         if include_json_content_type:
             headers["Content-Type"] = "application/json"
         if extra_headers:

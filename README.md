@@ -57,11 +57,12 @@ pip install -e .
 
 ## 本地配置（推荐）
 
-项目根目录创建 `.env`（SDK 会自动读取）：
+项目根目录创建 `.env`（SDK 会自动读取；也支持用 `GROK_DOTENV=/path/to/.env` 指定位置）：
 
 ```bash
 GROK_BASE_URL=http://your-host:8000
 GROK_API_KEY=sk-your_api_key_here
+# 如果 GROK_API_KEY 为空，SDK 不会发送 Authorization 头（避免 Authorization: Bearer  导致上游鉴权误判）
 GROK_TIMEOUT=30
 GROK_VERIFY_SSL=true
 GROK_MAX_RETRIES=2

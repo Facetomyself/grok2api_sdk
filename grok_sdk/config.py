@@ -13,9 +13,42 @@ DEFAULT_RETRY_BACKOFF_BASE = 0.5
 DEFAULT_RETRY_BACKOFF_MAX = 8.0
 
 
+def _find_dotenv() -> Optional[Path]:
+    """Find a .env file.
+
+    Search order:
+      1) GROK_DOTENV path (explicit override)
+      2) Walk up from this file to find a directory containing pyproject.toml
+         and use its .env
+      3) Current working directory .env
+
+    Returns None if not found.
+    """
+    override = os.getenv("GROK_DOTENV")
+    if override:
+        p = Path(override).expanduser()
+        if p.exists() and p.is_file():
+            return p
+
+    # Try to locate project root by walking up from this package file.
+    here = Path(__file__).resolve()
+    for parent in [here.parent] + list(here.parents):
+        if (parent / "pyproject.toml").exists():
+            candidate = parent / ".env"
+            if candidate.exists() and candidate.is_file():
+                return candidate
+            break
+
+    cwd_candidate = Path.cwd() / ".env"
+    if cwd_candidate.exists() and cwd_candidate.is_file():
+        return cwd_candidate
+
+    return None
+
+
 def _load_dotenv() -> None:
-    env_path = Path.cwd() / ".env"
-    if not env_path.exists() or not env_path.is_file():
+    env_path = _find_dotenv()
+    if env_path is None:
         return
 
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
