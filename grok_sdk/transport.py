@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import time
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple, Union
+
 from urllib.parse import urlparse
+
+from .sse import parse_sse_lines
 
 import requests
 from requests import Response, Session
@@ -29,6 +32,20 @@ from .exceptions import (
 from .hooks import AsyncRequestLogHook, RequestLogEvent, RequestLogHook
 
 MultipartFile = Tuple[str, Tuple[str, bytes, str]]
+
+
+async def _aiter_sse_events(lines: Any) -> AsyncGenerator[Any, None]:
+    """Convert async line iterator into SSE events."""
+    buffered: List[str] = []
+    async for raw in lines:
+        buffered.append(raw)
+        if raw.rstrip("\r\n") == "":
+            for ev in parse_sse_lines(buffered):
+                yield ev
+            buffered = []
+    if buffered:
+        for ev in parse_sse_lines(buffered):
+            yield ev
 
 
 def _same_origin(left_url: str, right_url: str) -> bool:
@@ -599,16 +616,15 @@ class HTTPTransport(_RetryMixin):
                         is_stream=True,
                     )
 
-                    for raw_line in response.iter_lines(decode_unicode=True):
-                        if not raw_line:
-                            continue
-                        line = raw_line.strip()
-                        if not line.startswith("data:"):
-                            continue
+                    for event in parse_sse_lines(
+                        response.iter_lines(decode_unicode=True)
+                    ):
                         stream_started = True
-                        event_data = line[5:].strip()
+                        event_data = (event.data or "").strip()
                         if event_data == "[DONE]":
                             break
+                        if not event_data:
+                            continue
                         try:
                             yield json.loads(event_data)
                         except json.JSONDecodeError:
@@ -744,16 +760,15 @@ class HTTPTransport(_RetryMixin):
                         is_stream=True,
                     )
 
-                    for raw_line in response.iter_lines(decode_unicode=True):
-                        if not raw_line:
-                            continue
-                        line = raw_line.strip()
-                        if not line.startswith("data:"):
-                            continue
+                    for event in parse_sse_lines(
+                        response.iter_lines(decode_unicode=True)
+                    ):
                         stream_started = True
-                        event_data = line[5:].strip()
+                        event_data = (event.data or "").strip()
                         if event_data == "[DONE]":
                             break
+                        if not event_data:
+                            continue
                         try:
                             yield json.loads(event_data)
                         except json.JSONDecodeError:
@@ -1337,16 +1352,13 @@ class AsyncHTTPTransport(_RetryMixin):
                         is_stream=True,
                     )
 
-                    async for raw_line in response.aiter_lines():
-                        if not raw_line:
-                            continue
-                        line = raw_line.strip()
-                        if not line.startswith("data:"):
-                            continue
+                    async for event in _aiter_sse_events(response.aiter_lines()):
                         stream_started = True
-                        event_data = line[5:].strip()
+                        event_data = (event.data or "").strip()
                         if event_data == "[DONE]":
                             break
+                        if not event_data:
+                            continue
                         try:
                             yield json.loads(event_data)
                         except json.JSONDecodeError:
@@ -1463,16 +1475,13 @@ class AsyncHTTPTransport(_RetryMixin):
                         is_stream=True,
                     )
 
-                    async for raw_line in response.aiter_lines():
-                        if not raw_line:
-                            continue
-                        line = raw_line.strip()
-                        if not line.startswith("data:"):
-                            continue
+                    async for event in _aiter_sse_events(response.aiter_lines()):
                         stream_started = True
-                        event_data = line[5:].strip()
+                        event_data = (event.data or "").strip()
                         if event_data == "[DONE]":
                             break
+                        if not event_data:
+                            continue
                         try:
                             yield json.loads(event_data)
                         except json.JSONDecodeError:
